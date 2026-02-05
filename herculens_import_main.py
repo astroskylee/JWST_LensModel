@@ -185,6 +185,71 @@ def multi_gauss_light(plate_name, param_name, n_gauss, sigma_lims, center_low=No
         'center_y': center[1],
     }]
 
+def _sample_one_mge_group(
+    plate_name, param_name, n_gauss, sigma_lims,
+    center_low=None, center_high=None, e_low=None, e_high=None
+):
+    sigma_bins = jnp.logspace(jnp.log10(sigma_lims[0]), jnp.log10(sigma_lims[1]), n_gauss + 1)
+
+    with numpyro.plate(f'{plate_name} - [{n_gauss}]', n_gauss):
+        A = numpyro.sample(f'A_{param_name}', dist.LogUniform(1e-5, 1e4))
+        sigma = numpyro.sample(f'sigma_{param_name}', dist.LogUniform(sigma_bins[:-1], sigma_bins[1:]))
+
+        with numpyro.plate(f'{plate_name} vectors - [2]', 2):
+            e = numpyro.sample(f'e_{param_name}', dist.TruncatedNormal(0.0, 0.1, low=e_low, high=e_high))
+            if (center_low is not None) or (center_high is not None):
+                center = numpyro.sample(
+                    f'center_{param_name}',
+                    dist.TruncatedNormal(0.0, 0.1, low=center_low, high=center_high)
+                )
+            else:
+                center = numpyro.sample(f'center_{param_name}', dist.Normal(0.0, 0.5))
+
+    amp = numpyro.deterministic(f'amp_{param_name}', A * sigma**2)
+    return amp, sigma, e, center  # e, center: shape (2, n_gauss)
+
+def multi_gauss_light_two_groups(
+    plate_name, param_name,
+    # group 1
+    n_gauss_1, sigma_lims_1,n_gauss_2, sigma_lims_2,  e_low_1=None, e_high_1=None, center_low_1=None, center_high_1=None,
+    # group 2
+    e_low_2=None, e_high_2=None, center_low_2=None, center_high_2=None,
+):
+    amp1, sig1, e1, c1 = _sample_one_mge_group(
+        f"{plate_name}_g1", f"{param_name}_g1",
+        n_gauss_1, sigma_lims_1,
+        center_low=center_low_1, center_high=center_high_1,
+        e_low=e_low_1, e_high=e_high_1
+    )
+
+    amp2, sig2, e2, c2 = _sample_one_mge_group(
+        f"{plate_name}_g2", f"{param_name}_g2",
+        n_gauss_2, sigma_lims_2,
+        center_low=center_low_2, center_high=center_high_2,
+        e_low=e_low_2, e_high=e_high_2
+    )
+
+    # 拼接成总的 (n1+n2,) 或 (2, n1+n2)
+    amp_all = jnp.concatenate([amp1, amp2], axis=0)
+    sig_all = jnp.concatenate([sig1, sig2], axis=0)
+    e_all   = jnp.concatenate([e1,   e2],   axis=1)   # (2, n_total)
+    c_all   = jnp.concatenate([c1,   c2],   axis=1)   # (2, n_total)
+
+    # ✅ 关键：注册成与你原来一致的名字：amp_lens, sigma_lens, e_lens, center_lens
+    amp_all = numpyro.deterministic(f"amp_{param_name}", amp_all)
+    sig_all = numpyro.deterministic(f"sigma_{param_name}", sig_all)
+    e_all   = numpyro.deterministic(f"e_{param_name}", e_all)
+    c_all   = numpyro.deterministic(f"center_{param_name}", c_all)
+
+    return [{
+        "amp": amp_all,
+        "sigma": sig_all,
+        "e1": e_all[0],
+        "e2": e_all[1],
+        "center_x": c_all[0],
+        "center_y": c_all[1],
+    }]
+
 def multi_gauss_light_center(
     plate_name,
     param_name,
