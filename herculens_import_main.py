@@ -262,31 +262,6 @@ def multi_gauss_light_center(
 
 
 
-
-def multi_gauss_light_unsorted(plate_name, param_name, n_gauss, sigma_lims, center_low=None, center_high=None, e_low=None, e_high=None):
-    with numpyro.plate(f'{plate_name} - [{n_gauss}]', n_gauss):
-        A = numpyro.sample(f'A_{param_name}', dist.LogUniform(0.00001, 10000))
-        sigma_unsorted = numpyro.sample(f'sigma_unsorted_{param_name}', dist.LogUniform(sigma_lims[0],sigma_lims[-1]))
-        with numpyro.plate(f'{plate_name} vectors - [2]', 2):
-            e = numpyro.sample(f'e_{param_name}', dist.TruncatedNormal(0, 0.1, low=e_low, high=e_high))
-            if (center_low is not None) or (center_high is not None):
-                center = numpyro.sample(
-                    f'center_{param_name}',
-                    dist.TruncatedNormal(0.0, 0.1, low=center_low, high=center_high)
-                )
-            else:
-                center = numpyro.sample(f'center_{param_name}', dist.Normal(0.0, 0.5))
-    sigma = numpyro.deterministic(f'sigma_{param_name}',jnp.sort(sigma_unsorted))
-    amp = numpyro.deterministic(f'amp_{param_name}', A * sigma**2)
-    return [{
-        'amp': amp,
-        'sigma': sigma,
-        'e1': e[0],
-        'e2': e[1],
-        'center_x': center[0],
-        'center_y': center[1],
-    }]
-
 def params2kwargs_multi_gauss_light(params, param_name):
     # sigma = jnp.logspace(jnp.log10(sigma_lims[0]), jnp.log10(sigma_lims[1]), n_gauss)
     return [{
@@ -297,7 +272,7 @@ def params2kwargs_multi_gauss_light(params, param_name):
         'center_x': params[f'center_{param_name}'][0],
         'center_y': params[f'center_{param_name}'][1]
     }]
-
+################################################################################################################################################
 def multi_gauss_light_share_center(plate_name, param_name, n_gauss, sigma_lims, center_low=None, center_high=None, e_low=None, e_high=None,share_q = False):
     # Order in log-spaced sigma bins
     sigma_bins = jnp.logspace(
